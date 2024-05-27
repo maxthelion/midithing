@@ -171,15 +171,15 @@
             let y = 0;
             let x = 0;
             // console.log(duration)
-            let shownDuration = 17;
-            let gridWidth = cellWidth * shownDuration;
-            for (let i = 0; i < shownDuration; i++) {
-                let gridX = (i + 1)* gridWidth;
-                ctx.beginPath();
-                ctx.moveTo(gridX, 0);
-                ctx.lineTo(gridX, canvas.height);
-                ctx.stroke();
-            }
+            // let shownDuration = 17;
+            // let gridWidth = cellWidth * shownDuration;
+            // for (let i = 0; i < shownDuration; i++) {
+            //     let gridX = (i + 1)* gridWidth;
+            //     ctx.beginPath();
+            //     ctx.moveTo(gridX, 0);
+            //     ctx.lineTo(gridX, canvas.height);
+            //     ctx.stroke();
+            // }
             ctx.beginPath();
             notesToPrint.forEach(note => {
                 ctx.fillStyle = 'green';

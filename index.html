@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drop MIDI Files</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #drop-area {
+            width: 80%;
+            max-width: 600px;
+            padding: 40px;
+            border: 4px dashed #cccccc;
+            border-radius: 10px;
+            text-align: center;
+            background-color: #ffffff;
+        }
+        #drop-area.hover {
+            border-color: #0066cc;
+        }
+        .pitch {
+            color: red;
+        }
+        .duration {
+            color: blue;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/midi-parser-js"></script>
+
+</head>
+<body>
+    <div>
+    <div id="drop-area">
+        <p>Drag and drop MIDI files here</p>
+        <p>or</p>
+        <input type="file" id="fileElem" accept=".mid,.midi" style="display:none" onchange="handleFiles(this.files)">
+        <label for="fileElem" style="cursor: pointer;">Select MIDI files</label>
+    </div>
+    <canvas id="canvas" width="800" height="200"></canvas>
+    <div id="output"></div>
+    </div>
+    <script>
+        const dropArea = document.getElementById('drop-area');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false)
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.add('hover'), false)
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.remove('hover'), false)
+        });
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            ([...files]).forEach(file => {
+                if (file.type === "audio/midi" || file.type === "audio/x-midi") {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const midiArrayBuffer = e.target.result;
+                        const midi = MidiParser.parse(new Uint8Array(midiArrayBuffer));
+                        processMidi(midi);
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    alert('Please drop a valid MIDI file.');
+                }
+            });
+        }
+        var openNotes = [];
+        var notesToPrint = [];
+        var root = undefined;
+        let tempo = 120;
+        var timeDivision;
+        var duration = 0;
+
+        function processMidi(midi) {
+            //console.log(midi.timeDivision);
+            //console.log(midi)
+            timeDivision = midi.timeDivision;
+            openNotes = [];
+            
+            let lastNote = undefined;
+            midi.track.forEach(track => {
+                track.event.forEach(event => {
+                    if ( event.type === 9) { // Note on
+                        if (lastNote !== undefined && lastNote.type === 8) {
+                            // if there is a gap between the last note and the current note, add a rest
+                            if (event.deltaTime > 0) {
+                                notesToPrint.push({
+                                    relativeNote: -1,
+                                    note: 0,
+                                    duration: event.deltaTime / timeDivision,
+                                    velocity: 0
+                                });
+                                duration += event.deltaTime / timeDivision;
+                            }
+                        }
+                        if (openNotes.length > 0) {
+                            console.log('overlap', openNotes);
+                            closePlayingNotes(event);
+                            duration += event.deltaTime / timeDivision;
+
+                        }
+                        openNotes.push(event);
+                        if (root === undefined) {
+                            root = event.data[0];
+                        }
+                    }
+                    if (event.type === 8) { // Note off
+                        // if there's an open note that matches the note off event, close it
+                        let noteToClose = openNotes.find(note => note.data[0] === event.data[0]);
+                        if (noteToClose !== undefined) {
+                            closePlayingNotes(event);
+                            duration += event.deltaTime / timeDivision;
+                        }
+                    }
+                    lastNote = event;
+                });
+            });
+            // console.log(notesToPrint);
+            drawNotes(notesToPrint, duration);
+        }
+        function closePlayingNotes(event){
+            while(openNotes.length > 0){
+                let noteToClose = openNotes.pop();
+                let noteData = noteToClose.data;
+                // console.log(noteToClose, openNotes);
+                // console.log(noteToClose, event);
+                
+                notesToPrint.push({
+                    relativeNote: noteData[0] - root + 1,
+                    note: noteData[0],
+                    duration: event.deltaTime / timeDivision,
+                    velocity: noteData[1]
+                });
+            }
+        }
+        function drawNotes(notesToPrint){
+            let allPitches = notesToPrint.map(note => note.relativeNote).filter((a) => a >= 0);
+            let maxPitch = allPitches.reduce((a, b) => Math.max(a, b));
+            let minPitch = allPitches.reduce((a, b) => Math.min(a, b));
+            let canvas = document.getElementById('canvas');
+            let ctx = canvas.getContext('2d');
+            let cellWidth = canvas.width / duration;
+            let cellHeight = canvas.height / (maxPitch - minPitch + 1);
+            let y = 0;
+            let x = 0;
+            // console.log(duration)
+            let shownDuration = 17;
+            let gridWidth = cellWidth * shownDuration;
+            for (let i = 0; i < shownDuration; i++) {
+                let gridX = (i + 1)* gridWidth;
+                ctx.beginPath();
+                ctx.moveTo(gridX, 0);
+                ctx.lineTo(gridX, canvas.height);
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            notesToPrint.forEach(note => {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(x, canvas.height - (cellHeight * note.relativeNote), note.duration * cellWidth, cellHeight);
+                x += note.duration * cellWidth;
+            });
+            let out = "<100 "
+            out += "F" + root + " ";
+            let notesToRender = []
+            notesToPrint.forEach(note => {
+                notesToRender.push( `<span class="duration">${Math.round(note.duration * 60)}</span> <span class="pitch">${note.relativeNote}</span> `);
+            });
+            out += notesToRender.join(" ");
+            out += ">";
+            document.getElementById('output').innerHTML = out;
+        }
+    </script>
+    
+</body>
+
+</html>
